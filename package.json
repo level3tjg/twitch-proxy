@@ -1,0 +1,18 @@
+{
+  "name": "twitch-proxy",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "deploy": "serverless deploy"
+  },
+  "dependencies": {
+    "axios": "^0.27.2",
+    "express": "^4.18.1",
+    "m3u8-parser": "^4.7.1",
+    "serverless-http": "^3.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.20",
+    "serverless": "^3.22.0"
+  }
+}

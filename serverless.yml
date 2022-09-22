@@ -1,0 +1,15 @@
+service: twitch-proxy
+frameworkVersion: '3'
+provider:
+  name: aws
+  stage: production
+  region: us-east-1
+  deploymentMethod: direct
+  runtime: nodejs16.x
+  logRetentionInDays: 7
+  architecture: arm64
+
+functions:
+  api:
+    handler: index.handler
+    url: true
