@@ -29,110 +29,75 @@ const router = express.Router();
 function handleRequest(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-
   const { channel, vodId } = req.params;
-  const baseURL = 'https://usher.ttvnw.net';
+  const baseURL = 'usher.ttvnw.net';
   const path = req.originalUrl;
   const playlist = path.substring(path.lastIndexOf('/') + 1);
-
   const useProxies = true;
-  const isVOD = !channel;
-
+  const isVOD = !!vodId;
   console.log(`Fetching ${isVOD ? `VOD (${vodId})` : `playlist (${channel})`}`);
-
   axios
-    .get(`${baseURL}${path}`)
-    .then(({ data, status }) => {
-      if (status != 200) throw new Error(`usher returned ${status}`);
-      console.log('usher success');
+    .get(`https://${baseURL}${path}`)
+    .then(({ status, data, request }) => {
+      if (status != 200)
+        throw new Error(`${request.host} returned status code ${status}`);
+      console.log(`${request.host} success`);
       parser.push(data);
       parser.end();
-      const suppress = parser.manifest.custom.twitchInfo.SUPPRESS;
+      res.setHeader('Content-Length', Buffer.byteLength(data, 'utf8'));
+      const suppress = parser.manifest.custom.twitchInfo.SUPPRESS === 'true';
       // Not sure if this flag is available for VODs, for now we'll just use the proxy anyways
-      if (isVOD || suppress === 'true') {
-        const proxies = [];
-        if (useProxies) {
-          proxies.push(
-            axios.get('https://api.ttv.lol/ping').then(({ status }) => {
-              if (status != 200) throw new Error('ttv.lol unreachable');
-              return axios
-                .get(
-                  `https://api.ttv.lol/${
-                    isVOD ? 'vod' : 'playlist'
-                  }/${encodeURIComponent(playlist)}`,
-                  {
-                    headers: {
-                      'X-Donate-To': 'https://ttv.lol/donate',
-                    },
-                  }
-                )
-                .then(({ data, status }) => {
-                  if (status != 200)
-                    throw new Error(`ttv.lol returned ${status}`);
-                  if (!data.startsWith('#EXTM3U'))
-                    throw new Error('ttv.lol returned invalid playlist');
-                  console.log('ttv.lol success');
-                  return data;
-                });
-            })
-          );
-
-          if (!isVOD) {
-            proxies.push(
-              axios.head('https://jupter.ga').then(({ status }) => {
-                if (status != 200) throw new Error('jupter.ga unreachable');
-                return axios
-                  .get(`https://jupter.ga/channel/${channel}`)
-                  .then(({ data, status }) => {
-                    if (status != 200)
-                      throw new Error(`jupter.ga returned ${status}`);
-                    if (!data.startsWith('#EXTM3U'))
-                      throw new Error('jupter.ga returned invalid playlist');
-                    console.log('jupter.ga success');
-                    return data;
-                  });
-              })
-            );
-          }
-        }
+      if (useProxies && (isVOD || suppress)) {
+        const proxies = [
+          {
+            url: `https://api.ttv.lol/${
+              isVOD ? 'vod' : 'playlist'
+            }/${encodeURIComponent(playlist)}`,
+            headers: {
+              'X-Donate-To': 'https://ttv.lol/donate',
+            },
+          },
+          isVOD || {
+            url: `https://jupter.ga/channel/${channel}`,
+          },
+        ]
+          .filter((_) => _.url)
+          .map(({ url, headers }) => {
+            return axios
+              .get(url, { headers, timeout: 5000 })
+              .then(({ status, data, request }) => {
+                if (status != 200)
+                  throw new Error(
+                    `${request.host} returned status code ${status}`
+                  );
+                if (!data.startsWith('#EXTM3U'))
+                  throw new Error(`${request.host} returned invalid playlist`);
+                console.log(`${request.host} success`);
+                return data;
+              });
+          });
 
         Promise.any(proxies)
-          .then((result) => {
-            if (!result) {
-              throw new Error('No proxy result');
-            } else {
-              res.setHeader(
-                'Content-Length',
-                Buffer.byteLength(result, 'utf8')
-              );
-              res.status(200).send(result).end();
-            }
+          .then((data) => {
+            res.setHeader('Content-Length', Buffer.byteLength(data, 'utf8'));
+            res.status(200).send(data).end();
           })
           .catch((error) => {
             console.log(error.message);
             if (error instanceof AggregateError)
               error.errors.forEach((error) => console.log(error.message));
-            console.log('All proxies failed, falling back to usher');
             res.status(200).send(data).end();
           });
       } else {
-        console.log('Server ads not enabled');
-        res.setHeader('Content-Length', Buffer.byteLength(data, 'utf8'));
         res.status(200).send(data).end();
       }
     })
     .catch((error) => {
-      console.log(`usher ${error.message}`);
+      console.log(`${baseURL} ${error.message}`);
       res.status(404).end();
     });
 }
 
-router.get('/ping', (_, res) => {
-  console.log('pong');
-  res.status(200).send('1').end();
-});
-
-// For vods in the future
 router.get('/vod/:vodId.m3u8', (req, res) => {
   handleRequest(req, res);
 });
