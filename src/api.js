@@ -3,6 +3,9 @@ const express = require('express');
 const serverless = require('serverless-http');
 const axios = require('axios');
 const m3u8 = require('m3u8-parser');
+require('dotenv').config();
+
+const { PROXY_HOST, PROXY_PORT } = process.env;
 
 const parser = new m3u8.Parser();
 
@@ -49,6 +52,13 @@ function handleRequest(req, res) {
       // Not sure if this flag is available for VODs, for now we'll just use the proxy anyways
       if (useProxies && (isVOD || suppress)) {
         const proxies = [
+          !(PROXY_HOST && PROXY_PORT) || {
+            url: `https://${baseURL}${path}`,
+            proxy: {
+              host: PROXY_HOST,
+              port: PROXY_PORT,
+            },
+          },
           {
             url: `https://api.ttv.lol/${
               isVOD ? 'vod' : 'playlist'
@@ -62,9 +72,9 @@ function handleRequest(req, res) {
           },
         ]
           .filter((_) => _.url)
-          .map(({ url, headers }) => {
+          .map(({ url, proxy, headers }) => {
             return axios
-              .get(url, { headers, timeout: 5000 })
+              .get(url, { proxy, headers, timeout: 5000 })
               .then(({ status, data, request }) => {
                 if (status != 200)
                   throw new Error(
@@ -98,13 +108,9 @@ function handleRequest(req, res) {
     });
 }
 
-router.get('/vod/:vodId.m3u8', (req, res) => {
-  handleRequest(req, res);
-});
+router.get('/vod/:vodId.m3u8', handleRequest);
 
-router.get('/api/channel/hls/:channel.m3u8', (req, res) => {
-  handleRequest(req, res);
-});
+router.get('/api/channel/hls/:channel.m3u8', handleRequest);
 
 app.use(router);
 

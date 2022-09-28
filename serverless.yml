@@ -13,3 +13,7 @@ functions:
   api:
     handler: index.handler
     url: true
+
+package:
+  patterns:
+    - '!.env'
